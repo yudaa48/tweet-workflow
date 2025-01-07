@@ -1,0 +1,77 @@
+main:
+    params: [args]
+    steps:
+    - init:
+        assign:
+            - check_type: ${args.CHECK_TYPE}
+
+    # Check database step
+    - check_words:
+        call: http.post
+        args:
+            url: "[FUNCTION_URL]"
+            body:
+                check_type: ${check_type}
+        result: word_check_result   
+
+    # Evaluate if words were found
+    - evaluate_words:
+        switch:
+        - condition: ${word_check_result.body.success}
+          next: check_last_tweet
+        - condition: ${true}
+          next: no_words_end
+
+    # Check last hour tweet
+    - check_last_tweet:
+        call: http.post
+        args:
+            url: "[FUNCTION_URL]"
+        result: last_tweet_result
+
+    # Evaluate last tweet result
+    - evaluate_last_tweet:
+        switch:
+        - condition: ${last_tweet_result.body.can_tweet}
+          next: create_tweet
+        - condition: ${true}
+          next: no_tweet_end
+
+    # Create tweet and add to queue
+    - create_tweet:
+        call: http.post
+        args:
+            url: "[FUNCTION_URL]"
+            body:
+                words: ${word_check_result.body.words}
+                check_type: ${check_type}
+        result: tweet_result
+
+    # Post to Twitter
+    - post_to_twitter:
+        call: http.post
+        args:
+            url: "[FUNCTION_URL]"
+            body:
+                tweet_id: ${tweet_result.body.tweet_id}
+        result: twitter_result
+        next: success_end
+
+    # Different end states
+    - no_words_end:
+        return:
+            success: false
+            message: "No eligible words found"
+            check_type: ${check_type}
+
+    - no_tweet_end:
+        return:
+            success: false
+            message: "Tweet not allowed at this time"
+            last_tweet_check: ${last_tweet_result.body}
+
+    - success_end:
+        return:
+            success: true
+            message: "Tweet successfully posted"
+            twitter_result: ${twitter_result.body}
